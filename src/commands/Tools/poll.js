@@ -3,7 +3,10 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder
+    EmbedBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } from 'discord.js';
 
 export default {
@@ -48,7 +51,7 @@ export default {
 
         // Vote tracking
         const votes = {};
-        const voters = new Set(); // prevents double voting
+        const userVotes = {}; // userId → option index
 
         options.forEach(o => votes[o] = 0);
 
@@ -57,14 +60,14 @@ export default {
         options.forEach((opt, i) => {
             row.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`poll_${i}`)
+                    .setCustomId(`vote_${i}`)
                     .setLabel(opt)
                     .setStyle(ButtonStyle.Primary)
             );
         });
 
         // Embed builder
-        const buildEmbed = (final = false) => {
+        const buildEmbed = () => {
             const total = Object.values(votes).reduce((a, b) => a + b, 0);
 
             const desc = options.map(opt => {
@@ -76,48 +79,130 @@ export default {
             }).join("\n\n");
 
             return new EmbedBuilder()
-                .setTitle(final ? `📊 Poll Ended — ${question}` : question)
+                .setTitle(question)
                 .setDescription(desc)
-                .setColor(final ? 0x5865F2 : 0x2b2d31)
-                .setFooter({ text: final ? `${total} total votes` : `Poll is active` });
+                .setColor(0x2b2d31)
+                .setFooter({ text: "Poll is active" });
         };
 
         // Send poll
         const pollMessage = await interaction.reply({
-            embeds: [buildEmbed(false)],
+            embeds: [buildEmbed()],
             components: [row],
             fetchReply: true
         });
 
-        // Collector (default 10 minutes)
         const collector = pollMessage.createMessageComponentCollector({
-            time: 10 * 60 * 1000
+            time: 60 * 60 * 1000 // 1 hour default
         });
 
         collector.on("collect", async i => {
-            // Prevent double voting
-            if (voters.has(i.user.id)) {
+            const userId = i.user.id;
+            const index = parseInt(i.customId.split("_")[1]);
+            const selectedOption = options[index];
+
+            // If user already voted → ask to remove vote
+            if (userVotes[userId] !== undefined) {
+                const oldIndex = userVotes[userId];
+                const oldOption = options[oldIndex];
+
                 return i.reply({
-                    content: "You have already voted.",
-                    ephemeral: true
+                    ephemeral: true,
+                    content: `You already voted for **${oldOption}**.\nDo you want to remove your vote?`,
+                    components: [
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`remove_yes_${oldIndex}`)
+                                .setLabel("Remove Vote")
+                                .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId("remove_no")
+                                .setLabel("Cancel")
+                                .setStyle(ButtonStyle.Secondary)
+                        )
+                    ]
                 });
             }
 
-            voters.add(i.user.id);
-
-            const index = i.customId.split("_")[1];
-            const selected = options[index];
-            votes[selected]++;
-
-            await i.update({
-                embeds: [buildEmbed(false)],
-                components: [row]
+            // User has not voted → ask to confirm vote
+            return i.reply({
+                ephemeral: true,
+                content: `Are you sure you want to vote for **${selectedOption}**?`,
+                components: [
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`confirm_yes_${index}`)
+                            .setLabel("Confirm Vote")
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId("confirm_no")
+                            .setLabel("Cancel")
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                ]
             });
+        });
+
+        // Handle confirmation buttons
+        collector.on("collect", async i => {
+            const id = i.customId;
+
+            // Confirm vote
+            if (id.startsWith("confirm_yes_")) {
+                const index = parseInt(id.split("_")[2]);
+                const option = options[index];
+
+                votes[option]++;
+                userVotes[i.user.id] = index;
+
+                await i.update({
+                    content: `Your vote for **${option}** has been recorded.`,
+                    components: []
+                });
+
+                return pollMessage.edit({
+                    embeds: [buildEmbed()],
+                    components: [row]
+                });
+            }
+
+            if (id === "confirm_no") {
+                return i.update({
+                    content: "Vote cancelled.",
+                    components: []
+                });
+            }
+
+            // Remove vote
+            if (id.startsWith("remove_yes_")) {
+                const oldIndex = parseInt(id.split("_")[2]);
+                const oldOption = options[oldIndex];
+
+                votes[oldOption]--;
+                delete userVotes[i.user.id];
+
+                await i.update({
+                    content: `Your vote for **${oldOption}** has been removed.`,
+                    components: []
+                });
+
+                return pollMessage.edit({
+                    embeds: [buildEmbed()],
+                    components: [row]
+                });
+            }
+
+            if (id === "remove_no") {
+                return i.update({
+                    content: "Vote removal cancelled.",
+                    components: []
+                });
+            }
         });
 
         collector.on("end", async () => {
             await pollMessage.edit({
-                embeds: [buildEmbed(true)],
+                embeds: [buildEmbed()],
                 components: []
             });
         });
