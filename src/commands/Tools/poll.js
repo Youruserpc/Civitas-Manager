@@ -2,14 +2,13 @@ import {
     SlashCommandBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle,
-    EmbedBuilder
+    ButtonStyle
 } from 'discord.js';
 
 export default {
     data: new SlashCommandBuilder()
         .setName('poll')
-        .setDescription('Create a clean style poll')
+        .setDescription('Create a clean Flow‑Core style poll')
         .addStringOption(opt =>
             opt.setName('question')
                 .setDescription('Poll question')
