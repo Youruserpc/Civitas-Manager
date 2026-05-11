@@ -5,6 +5,10 @@ import {
     ButtonStyle
 } from 'discord.js';
 
+export default {
+    data: new SlashCommandBuilder()
+        .setName('poll')
+        
 // Convert human duration to milliseconds
 function parseDuration(input) {
     input = input.toLowerCase().trim();
