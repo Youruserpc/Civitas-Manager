@@ -46,6 +46,13 @@ export default {
             if (opt) options.push(opt);
         }
 
+        if (options.length < 2) {
+            return interaction.reply({
+                content: "You need at least 2 options to create a poll.",
+                ephemeral: true
+            });
+        }
+
         // Vote tracking
         const votes = {};
         const userVotes = {}; // userId → option index
@@ -94,101 +101,23 @@ export default {
             time: 60 * 60 * 1000 // 1 hour
         });
 
-        // SINGLE collector handler for ALL buttons
         collector.on("collect", async i => {
             const id = i.customId;
             const userId = i.user.id;
 
-            // -----------------------------
-            // 1. USER CLICKS A VOTE BUTTON
-            // -----------------------------
-            if (id.startsWith("vote_")) {
-                const index = parseInt(id.split("_")[1]);
-                const selectedOption = options[index];
+            if (!id.startsWith("vote_")) return;
 
-                // Already voted → ask to remove
-                if (userVotes[userId] !== undefined) {
-                    const oldIndex = userVotes[userId];
-                    const oldOption = options[oldIndex];
+            const index = parseInt(id.split("_")[1]);
+            const option = options[index];
 
-                    return i.reply({
-                        ephemeral: true,
-                        content: `You already voted for **${oldOption}**.\nDo you want to remove your vote?`,
-                        components: [
-                            new ActionRowBuilder().addComponents(
-                                new ButtonBuilder()
-                                    .setCustomId(`remove_yes_${oldIndex}`)
-                                    .setLabel("Remove Vote")
-                                    .setStyle(ButtonStyle.Danger),
-                                new ButtonBuilder()
-                                    .setCustomId("remove_no")
-                                    .setLabel("Cancel")
-                                    .setStyle(ButtonStyle.Secondary)
-                            )
-                        ]
-                    });
-                }
-
-                // Not voted → ask to confirm
-                return i.reply({
-                    ephemeral: true,
-                    content: `Are you sure you want to vote for **${selectedOption}**?`,
-                    components: [
-                        new ActionRowBuilder().addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`confirm_yes_${index}`)
-                                .setLabel("Confirm Vote")
-                                .setStyle(ButtonStyle.Success),
-                            new ButtonBuilder()
-                                .setCustomId("confirm_no")
-                                .setLabel("Cancel")
-                                .setStyle(ButtonStyle.Secondary)
-                        )
-                    ]
-                });
-            }
-
-            // -----------------------------
-            // 2. CONFIRM VOTE
-            // -----------------------------
-            if (id.startsWith("confirm_yes_")) {
-                const index = parseInt(id.split("_")[2]);
-                const option = options[index];
-
-                votes[option]++;
-                userVotes[userId] = index;
-
-                await i.update({
-                    content: `Your vote for **${option}** has been recorded.`,
-                    components: []
-                });
-
-                return pollMessage.edit({
-                    embeds: [buildEmbed()],
-                    components: [row]
-                });
-            }
-
-            if (id === "confirm_no") {
-                return i.update({
-                    content: "Vote cancelled.",
-                    components: []
-                });
-            }
-
-            // -----------------------------
-            // 3. REMOVE VOTE
-            // -----------------------------
-            if (id.startsWith("remove_yes_")) {
-                const oldIndex = parseInt(id.split("_")[2]);
-                const oldOption = options[oldIndex];
-
-                votes[oldOption]--;
+            // If user already voted for this option → remove vote
+            if (userVotes[userId] === index) {
+                votes[option] = Math.max(0, votes[option] - 1);
                 delete userVotes[userId];
 
-                await i.update({
-                    content: `Your vote for **${oldOption}** has been removed.`,
-                    components: []
+                await i.reply({
+                    content: `Your vote for **${option}** has been removed.`,
+                    ephemeral: true
                 });
 
                 return pollMessage.edit({
@@ -197,12 +126,26 @@ export default {
                 });
             }
 
-            if (id === "remove_no") {
-                return i.update({
-                    content: "Vote removal cancelled.",
-                    components: []
-                });
+            // If user voted for a different option → move vote
+            if (userVotes[userId] !== undefined) {
+                const oldIndex = userVotes[userId];
+                const oldOption = options[oldIndex];
+                votes[oldOption] = Math.max(0, votes[oldOption] - 1);
             }
+
+            // Add new vote
+            votes[option]++;
+            userVotes[userId] = index;
+
+            await i.reply({
+                content: `Your vote for **${option}** has been recorded.`,
+                ephemeral: true
+            });
+
+            return pollMessage.edit({
+                embeds: [buildEmbed()],
+                components: [row]
+            });
         });
 
         collector.on("end", async () => {
