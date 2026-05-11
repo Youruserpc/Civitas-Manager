@@ -8,7 +8,7 @@ import {
 export default {
     data: new SlashCommandBuilder()
         .setName('poll')
-        .setDescription('Create a clean Flow‑Core style poll')
+        .setDescription('Create a Flow‑Core style poll with timer')
         .addStringOption(opt =>
             opt.setName('question')
                 .setDescription('Poll question')
@@ -33,10 +33,16 @@ export default {
             opt.setName('option4')
                 .setDescription('Fourth option')
                 .setRequired(false)
+        )
+        .addIntegerOption(opt =>
+            opt.setName('duration')
+                .setDescription('Poll duration in seconds (e.g., 60)')
+                .setRequired(true)
         ),
 
     async execute(interaction) {
         const question = interaction.options.getString('question');
+        const duration = interaction.options.getInteger('duration') * 1000;
 
         const options = [];
         for (let i = 1; i <= 4; i++) {
@@ -51,11 +57,9 @@ export default {
             });
         }
 
-        // Votes stored in memory
         const votes = {};
         options.forEach(o => votes[o] = 0);
 
-        // Build buttons
         const row = new ActionRowBuilder();
         options.forEach((opt, i) => {
             row.addComponents(
@@ -66,28 +70,28 @@ export default {
             );
         });
 
-        // Initial embed
-        const embed = {
+        const initialEmbed = {
             title: question,
-            description: options.map(opt => `**${opt}**\n░░░░░░░░░░░░░░░░░░░░ 0% (0 votes)`).join('\n\n'),
+            description: options
+                .map(opt => `**${opt}**\n░░░░░░░░░░░░░░░░░░░░ 0% (0 votes)`)
+                .join('\n\n'),
             color: 0x2b2d31,
-            footer: { text: 'Poll started' }
+            footer: { text: `Poll ends in ${duration / 1000}s` }
         };
 
-        // Send poll message
         const pollMessage = await interaction.channel.send({
-            embeds: [embed],
+            embeds: [initialEmbed],
             components: [row]
         });
 
-        // Ephemeral confirmation
         await interaction.reply({
             content: '✅ Poll created successfully!',
             ephemeral: true
         });
 
-        // Collector
-        const collector = pollMessage.createMessageComponentCollector({ time: 86400000 });
+        const collector = pollMessage.createMessageComponentCollector({
+            time: duration
+        });
 
         collector.on('collect', async i => {
             const index = i.customId.split('_')[1];
@@ -101,7 +105,6 @@ export default {
                 const count = votes[opt];
                 const percent = totalVotes === 0 ? 0 : ((count / totalVotes) * 100).toFixed(2);
 
-                // Flow Core style bar (20 blocks)
                 const filled = Math.round(percent / 5);
                 const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
 
@@ -112,10 +115,36 @@ export default {
                 title: question,
                 description: pollText,
                 color: 0x2b2d31,
-                footer: { text: `${totalVotes} total votes` }
+                footer: { text: `Poll ends in ${Math.ceil((collector.endTime - Date.now()) / 1000)}s` }
             };
 
             await i.update({ embeds: [updatedEmbed], components: [row] });
+        });
+
+        collector.on('end', async () => {
+            const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+
+            const finalText = options.map(opt => {
+                const count = votes[opt];
+                const percent = totalVotes === 0 ? 0 : ((count / totalVotes) * 100).toFixed(2);
+
+                const filled = Math.round(percent / 5);
+                const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+
+                return `**${opt}**\n${bar}  ${percent}% (${count} votes)`;
+            }).join('\n\n');
+
+            const finalEmbed = {
+                title: `📊 Poll Ended — ${question}`,
+                description: finalText,
+                color: 0x5865F2,
+                footer: { text: `Final results • ${totalVotes} total votes` }
+            };
+
+            await pollMessage.edit({
+                embeds: [finalEmbed],
+                components: [] // remove buttons
+            });
         });
     }
 };
