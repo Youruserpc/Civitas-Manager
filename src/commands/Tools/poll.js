@@ -7,11 +7,9 @@ import {
 } from 'discord.js';
 
 function parseDuration(input) {
-  if (!input) return 0;
+  if (!input) return NaN;
   input = String(input).trim().toLowerCase();
-  // plain seconds number
   if (/^\d+$/.test(input)) return parseInt(input, 10) * 1000;
-  // formats like 30s, 5m, 1h
   const match = input.match(/^(\d+)(s|m|h)$/);
   if (!match) return NaN;
   const n = parseInt(match[1], 10);
@@ -23,7 +21,7 @@ function parseDuration(input) {
 }
 
 function humanTime(ms) {
-  if (ms <= 0) return '0s';
+  if (!Number.isFinite(ms) || ms <= 0) return '0s';
   const s = Math.ceil(ms / 1000);
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.ceil(s / 60)}m`;
@@ -33,7 +31,7 @@ function humanTime(ms) {
 export default {
   data: new SlashCommandBuilder()
     .setName('poll')
-    .setDescription('Create a Flow‑Core style poll with timer')
+    .setDescription('Create a Flow Core style poll with timer')
     .addStringOption(opt =>
       opt.setName('question')
         .setDescription('Poll question')
@@ -51,25 +49,25 @@ export default {
     )
     .addStringOption(opt =>
       opt.setName('option3')
-        .setDescription('Third option (optional)')
+        .setDescription('Third option optional')
         .setRequired(false)
     )
     .addStringOption(opt =>
       opt.setName('option4')
-        .setDescription('Fourth option (optional)')
+        .setDescription('Fourth option optional')
         .setRequired(false)
     )
     .addStringOption(opt =>
       opt.setName('duration')
-        .setDescription('Duration (seconds or 30s, 5m, 1h). Example: 60 or 5m')
+        .setDescription('Duration seconds or 30s, 5m, 1h. Example 60 or 5m')
         .setRequired(true)
     ),
 
   async execute(interaction) {
     const question = interaction.options.getString('question', true);
     const durationInput = interaction.options.getString('duration', true);
-
     const durationMs = parseDuration(durationInput);
+
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
       return interaction.reply({
         content: '❌ Invalid duration. Use seconds (e.g., `60`) or `30s`, `5m`, `1h`.',
@@ -85,28 +83,30 @@ export default {
 
     if (options.length < 2) {
       return interaction.reply({
-        content: '❌ You need at least **2 options**.',
+        content: '❌ You need at least 2 options.',
         ephemeral: true
       });
     }
 
-    // vote tracking
-    const voteCounts = new Map(); // option -> count
+    // Vote tracking
+    const voteCounts = new Map();
     options.forEach(o => voteCounts.set(o, 0));
-    const userVotes = new Map(); // userId -> option
+    const userVotes = new Map();
 
-    // build buttons
+    // Buttons row
     const buttonsRow = new ActionRowBuilder();
+    const optionEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣'];
     options.forEach((opt, i) => {
       buttonsRow.addComponents(
         new ButtonBuilder()
           .setCustomId(`poll_vote_${i}`)
           .setLabel(opt.length > 80 ? opt.slice(0, 77) + '...' : opt)
+          .setEmoji(optionEmojis[i] || null)
           .setStyle(ButtonStyle.Primary)
       );
     });
 
-    // end poll button (only author can use)
+    // Control row with End Poll
     const controlRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('poll_end')
@@ -114,29 +114,8 @@ export default {
         .setStyle(ButtonStyle.Danger)
     );
 
-    // initial embed
-    const initialEmbed = new EmbedBuilder()
-      .setTitle(question)
-      .setColor(0x2b2d31)
-      .setDescription(options.map(opt => `**${opt}**\n${'░'.repeat(20)} 0.00% (0 votes)`).join('\n\n'))
-      .setFooter({ text: `Ends in ${humanTime(durationMs)}` })
-      .setTimestamp();
-
-    // send poll as the command reply and fetch the message
-    const pollMessage = await interaction.reply({
-      embeds: [initialEmbed],
-      components: [buttonsRow, controlRow],
-      fetchReply: true
-    });
-
-    // ephemeral confirmation
-    await interaction.followUp({ content: '✅ Poll created successfully!', ephemeral: true });
-
-    const endTime = Date.now() + durationMs;
-    let countdownInterval = null;
-
-    // helper to build embed from current votes
-    function buildEmbed(final = false) {
+    // Build embed helper
+    function buildEmbed(final = false, endTime = null) {
       const total = Array.from(voteCounts.values()).reduce((a, b) => a + b, 0);
       const lines = options.map(opt => {
         const count = voteCounts.get(opt) || 0;
@@ -151,40 +130,50 @@ export default {
         .setTitle(final ? `📊 Poll Ended — ${question}` : question)
         .setColor(final ? 0x5865F2 : 0x2b2d31)
         .setDescription(lines.join('\n\n'))
-        .setFooter({ text: final ? `${Array.from(voteCounts.values()).reduce((a,b)=>a+b,0)} total votes` : `Ends in ${humanTime(Math.max(0, endTime - Date.now()))}` })
+        .setFooter({
+          text: final ? `${total} total votes` : `Ends in ${humanTime(Math.max(0, endTime - Date.now()))}`
+        })
         .setTimestamp();
 
       return embed;
     }
 
-    // update countdown every 5s
-    countdownInterval = setInterval(async () => {
+    // Send initial poll message
+    const endTime = Date.now() + durationMs;
+    const initialEmbed = buildEmbed(false, endTime);
+
+    const pollMessage = await interaction.reply({
+      embeds: [initialEmbed],
+      components: [buttonsRow, controlRow],
+      fetchReply: true
+    });
+
+    // Confirm creation privately
+    await interaction.followUp({ content: '✅ Poll created successfully!', ephemeral: true });
+
+    // Countdown updater
+    let countdownInterval = setInterval(async () => {
       try {
         const remaining = Math.max(0, endTime - Date.now());
-        // update only footer to reduce churn
-        await pollMessage.edit({ embeds: [buildEmbed(false)], components: [buttonsRow, controlRow] });
-        if (remaining <= 0) {
-          clearInterval(countdownInterval);
-        }
+        await pollMessage.edit({ embeds: [buildEmbed(false, endTime)], components: [buttonsRow, controlRow] });
+        if (remaining <= 0) clearInterval(countdownInterval);
       } catch (err) {
-        // ignore update errors (e.g., message deleted or interaction expired)
         clearInterval(countdownInterval);
       }
     }, 5000);
 
-    // collector for votes and control
+    // Collector
     const collector = pollMessage.createMessageComponentCollector({ time: durationMs });
 
     collector.on('collect', async i => {
       try {
-        // End button
+        // End Poll button
         if (i.customId === 'poll_end') {
-          // only author can end
           if (i.user.id !== interaction.user.id) {
             return i.reply({ content: 'Only the poll creator can end this poll early.', ephemeral: true });
           }
           collector.stop('ended_by_author');
-          return i.update({ content: 'Poll ended by creator', embeds: [buildEmbed(true)], components: [] });
+          return i.update({ embeds: [buildEmbed(true, endTime)], components: [] });
         }
 
         // Vote button
@@ -196,50 +185,46 @@ export default {
           const chosen = options[idx];
           const prev = userVotes.get(i.user.id);
 
-          // if user voted same option, ignore (or you could unvote)
+          // If same option clicked again, unvote
           if (prev === chosen) {
-            // optional: unvote on second click
-            // userVotes.delete(i.user.id);
-            // voteCounts.set(chosen, Math.max(0, voteCounts.get(chosen) - 1));
-            // await i.update({ embeds: [buildEmbed(false)], components: [buttonsRow, controlRow] });
-            return i.reply({ content: 'You already voted for that option.', ephemeral: true });
+            userVotes.delete(i.user.id);
+            voteCounts.set(chosen, Math.max(0, voteCounts.get(chosen) - 1));
+            await i.update({ embeds: [buildEmbed(false, endTime)], components: [buttonsRow, controlRow] });
+            return;
           }
 
-          // switch vote if needed
+          // Switch vote if previously voted
           if (prev) {
             voteCounts.set(prev, Math.max(0, voteCounts.get(prev) - 1));
           }
           userVotes.set(i.user.id, chosen);
           voteCounts.set(chosen, (voteCounts.get(chosen) || 0) + 1);
 
-          // update embed live
-          await i.update({ embeds: [buildEmbed(false)], components: [buttonsRow, controlRow] });
+          await i.update({ embeds: [buildEmbed(false, endTime)], components: [buttonsRow, controlRow] });
         }
       } catch (err) {
-        // If interaction expired or other error, try to log and ignore
         try { await i.reply({ content: 'An error occurred while processing your vote.', ephemeral: true }); } catch {}
       }
     });
 
-    collector.on('end', async (collected, reason) => {
+    collector.on('end', async () => {
       clearInterval(countdownInterval);
-      // final embed and disable buttons
       try {
-        const finalEmbed = buildEmbed(true);
-        // disable buttons visually
-        const disabledRows = [];
+        const finalEmbed = buildEmbed(true, endTime);
+
+        // Disable buttons visually by creating disabled copies
+        const disabledButtonRows = [];
         const disabledButtons = buttonsRow.components.map(b => b.setDisabled(true));
         const disabledControl = controlRow.components.map(b => b.setDisabled(true));
         const disabledButtonsRow = new ActionRowBuilder().addComponents(...disabledButtons);
         const disabledControlRow = new ActionRowBuilder().addComponents(...disabledControl);
-        disabledRows.push(disabledButtonsRow);
-        disabledRows.push(disabledControlRow);
+        disabledButtonRows.push(disabledButtonsRow);
+        disabledButtonRows.push(disabledControlRow);
 
         await pollMessage.edit({ embeds: [finalEmbed], components: [] });
-        // post a summary message (optional)
         await interaction.followUp({ content: `📊 Poll ended — results posted above.`, ephemeral: false });
       } catch (err) {
-        // ignore
+        // ignore edit errors
       }
     });
   }
