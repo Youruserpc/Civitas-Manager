@@ -124,6 +124,32 @@ export default {
                 const selected = options[index];
 
                 votes[selected]++;
+collector.on('collect', async i => {
+    const index = i.customId.split('_')[1];
+    const selected = options[index];
+
+    votes[selected]++;
+
+    const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+
+    const pollText = options.map(opt => {
+        const count = votes[opt];
+        const percent = totalVotes === 0 ? 0 : ((count / totalVotes) * 100).toFixed(1);
+
+        const blocks = Math.round(percent / 10);
+        const bar = '█'.repeat(blocks) + '░'.repeat(10 - blocks);
+
+        return `**${opt}**\n${bar} ${percent}% (${count} votes)`;
+    }).join('\n\n');
+
+    const updatedEmbed = {
+        title: question,
+        description: pollText,
+        color: 0x5865F2
+    };
+
+    await i.update({ embeds: [updatedEmbed], components: [row] });
+});
 
                 const total = Object.values(votes).reduce((a, b) => a + b, 0);
 
