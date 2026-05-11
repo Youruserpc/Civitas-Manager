@@ -9,7 +9,12 @@ import {
 function parseDuration(input) {
     input = input.toLowerCase().trim();
 
-    const map = {
+    const units = {
+        "second": 1000,
+        "seconds": 1000,
+        "sec": 1000,
+        "s": 1000,
+
         "minute": 60 * 1000,
         "minutes": 60 * 1000,
         "min": 60 * 1000,
@@ -38,12 +43,12 @@ function parseDuration(input) {
     const value = parseInt(parts[0]);
     const unit = parts[1];
 
-    if (!value || !map[unit]) return NaN;
+    if (!value || !units[unit]) return NaN;
 
-    return value * map[unit];
+    return value * units[unit];
 }
 
-// Format time left
+// Format time left nicely
 function formatTime(ms) {
     if (ms <= 0) return "0s";
 
@@ -86,12 +91,6 @@ export default {
             opt.setName('option4')
                 .setDescription('Fourth option')
                 .setRequired(false)
-                         .addStringOption(opt =>
-    opt.setName('duration')
-        .setDescription('How long should the poll last? Example: 1 minute, 1 hour, 1 day, 1 week')
-        .setRequired(true)
-)
-
         )
         .addStringOption(opt =>
             opt.setName('duration')
@@ -212,4 +211,3 @@ export default {
         });
     }
 };
-
