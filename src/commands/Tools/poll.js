@@ -86,6 +86,12 @@ export default {
             opt.setName('option4')
                 .setDescription('Fourth option')
                 .setRequired(false)
+                         .addStringOption(opt =>
+    opt.setName('duration')
+        .setDescription('How long should the poll last? Example: 1 minute, 1 hour, 1 day, 1 week')
+        .setRequired(true)
+)
+
         )
         .addStringOption(opt =>
             opt.setName('duration')
