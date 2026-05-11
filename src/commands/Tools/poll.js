@@ -103,7 +103,7 @@ export default {
 
                 // Flow Core style bar (20 blocks)
                 const filled = Math.round(percent / 5);
-                const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+                const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
 
                 return `**${opt}**\n${bar}  ${percent}% (${count} votes)`;
             }).join('\n\n');
