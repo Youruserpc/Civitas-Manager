@@ -3,10 +3,7 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle
+    EmbedBuilder
 } from 'discord.js';
 
 export default {
@@ -92,31 +89,58 @@ export default {
             fetchReply: true
         });
 
+        // Collector
         const collector = pollMessage.createMessageComponentCollector({
-            time: 60 * 60 * 1000 // 1 hour default
+            time: 60 * 60 * 1000 // 1 hour
         });
 
+        // SINGLE collector handler for ALL buttons
         collector.on("collect", async i => {
+            const id = i.customId;
             const userId = i.user.id;
-            const index = parseInt(i.customId.split("_")[1]);
-            const selectedOption = options[index];
 
-            // If user already voted → ask to remove vote
-            if (userVotes[userId] !== undefined) {
-                const oldIndex = userVotes[userId];
-                const oldOption = options[oldIndex];
+            // -----------------------------
+            // 1. USER CLICKS A VOTE BUTTON
+            // -----------------------------
+            if (id.startsWith("vote_")) {
+                const index = parseInt(id.split("_")[1]);
+                const selectedOption = options[index];
 
+                // Already voted → ask to remove
+                if (userVotes[userId] !== undefined) {
+                    const oldIndex = userVotes[userId];
+                    const oldOption = options[oldIndex];
+
+                    return i.reply({
+                        ephemeral: true,
+                        content: `You already voted for **${oldOption}**.\nDo you want to remove your vote?`,
+                        components: [
+                            new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`remove_yes_${oldIndex}`)
+                                    .setLabel("Remove Vote")
+                                    .setStyle(ButtonStyle.Danger),
+                                new ButtonBuilder()
+                                    .setCustomId("remove_no")
+                                    .setLabel("Cancel")
+                                    .setStyle(ButtonStyle.Secondary)
+                            )
+                        ]
+                    });
+                }
+
+                // Not voted → ask to confirm
                 return i.reply({
                     ephemeral: true,
-                    content: `You already voted for **${oldOption}**.\nDo you want to remove your vote?`,
+                    content: `Are you sure you want to vote for **${selectedOption}**?`,
                     components: [
                         new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
-                                .setCustomId(`remove_yes_${oldIndex}`)
-                                .setLabel("Remove Vote")
-                                .setStyle(ButtonStyle.Danger),
+                                .setCustomId(`confirm_yes_${index}`)
+                                .setLabel("Confirm Vote")
+                                .setStyle(ButtonStyle.Success),
                             new ButtonBuilder()
-                                .setCustomId("remove_no")
+                                .setCustomId("confirm_no")
                                 .setLabel("Cancel")
                                 .setStyle(ButtonStyle.Secondary)
                         )
@@ -124,36 +148,15 @@ export default {
                 });
             }
 
-            // User has not voted → ask to confirm vote
-            return i.reply({
-                ephemeral: true,
-                content: `Are you sure you want to vote for **${selectedOption}**?`,
-                components: [
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`confirm_yes_${index}`)
-                            .setLabel("Confirm Vote")
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId("confirm_no")
-                            .setLabel("Cancel")
-                            .setStyle(ButtonStyle.Secondary)
-                    )
-                ]
-            });
-        });
-
-        // Handle confirmation buttons
-        collector.on("collect", async i => {
-            const id = i.customId;
-
-            // Confirm vote
+            // -----------------------------
+            // 2. CONFIRM VOTE
+            // -----------------------------
             if (id.startsWith("confirm_yes_")) {
                 const index = parseInt(id.split("_")[2]);
                 const option = options[index];
 
                 votes[option]++;
-                userVotes[i.user.id] = index;
+                userVotes[userId] = index;
 
                 await i.update({
                     content: `Your vote for **${option}** has been recorded.`,
@@ -173,13 +176,15 @@ export default {
                 });
             }
 
-            // Remove vote
+            // -----------------------------
+            // 3. REMOVE VOTE
+            // -----------------------------
             if (id.startsWith("remove_yes_")) {
                 const oldIndex = parseInt(id.split("_")[2]);
                 const oldOption = options[oldIndex];
 
                 votes[oldOption]--;
-                delete userVotes[i.user.id];
+                delete userVotes[userId];
 
                 await i.update({
                     content: `Your vote for **${oldOption}** has been removed.`,
