@@ -1,40 +1,93 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import {
+    SlashCommandBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} from 'discord.js';
+
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { handleInteractionError } from '../../utils/errorHandler.js';
 
+const MAX_OPTIONS = 10;
+
 export default {
     data: new SlashCommandBuilder()
         .setName('poll')
-        .setDescription('Create a clean, modern poll with buttons')
+        .setDescription('Create a clean poll with buttons')
         .addStringOption(opt =>
             opt.setName('question')
                 .setDescription('Poll question')
-                .setRequired(true))
+                .setRequired(true)
+        )
         .addStringOption(opt =>
-            opt.setName('options')
-                .setDescription('Comma-separated options (e.g. Yes, No, Maybe)')
-                .setRequired(true)),
+            opt.setName('option1')
+                .setDescription('First option')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('option2')
+                .setDescription('Second option')
+                .setRequired(true)
+        )
+        .addStringOption(opt =>
+            opt.setName('option3')
+                .setDescription('Third option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option4')
+                .setDescription('Fourth option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option5')
+                .setDescription('Fifth option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option6')
+                .setDescription('Sixth option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option7')
+                .setDescription('Seventh option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option8')
+                .setDescription('Eighth option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option9')
+                .setDescription('Ninth option')
+                .setRequired(false)
+        )
+        .addStringOption(opt =>
+            opt.setName('option10')
+                .setDescription('Tenth option')
+                .setRequired(false)
+        ),
 
     async execute(interaction) {
         try {
             await InteractionHelper.safeDefer(interaction);
 
             const question = interaction.options.getString('question');
-            const options = interaction.options.getString('options')
-                .split(',')
-                .map(o => o.trim())
-                .filter(o => o.length > 0);
 
-            if (options.length < 2)
+            const options = [];
+            for (let i = 1; i <= MAX_OPTIONS; i++) {
+                const opt = interaction.options.getString(`option${i}`);
+                if (opt) options.push(opt);
+            }
+
+            if (options.length < 2) {
                 return InteractionHelper.safeEditReply(interaction, {
                     embeds: [errorEmbed('You need at least **2 options**.')]
                 });
-
-            if (options.length > 10)
-                return InteractionHelper.safeEditReply(interaction, {
-                    embeds: [errorEmbed('You can only have **up to 10 options**.')]
-                });
+            }
 
             const votes = {};
             options.forEach(o => votes[o] = 0);
@@ -50,7 +103,7 @@ export default {
             });
 
             const embed = successEmbed(
-                `📊 Poll Started`,
+                '📊 Poll Started',
                 options.map(o => `**${o}** — 0% (0 votes)`).join('\n')
             ).setTitle(question);
 
@@ -74,7 +127,7 @@ export default {
                 const total = Object.values(votes).reduce((a, b) => a + b, 0);
 
                 const updatedEmbed = successEmbed(
-                    `📊 Poll`,
+                    '📊 Poll',
                     options.map(opt => {
                         const count = votes[opt];
                         const percent = total === 0 ? 0 : ((count / total) * 100).toFixed(2);
@@ -93,7 +146,6 @@ export default {
         }
     }
 };
-
 
 
 
