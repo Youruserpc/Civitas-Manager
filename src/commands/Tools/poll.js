@@ -6,7 +6,6 @@ import {
 } from 'discord.js';
 
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
-import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { handleInteractionError } from '../../utils/errorHandler.js';
 
 const MAX_OPTIONS = 10;
@@ -73,8 +72,7 @@ export default {
 
     async execute(interaction) {
         try {
-            await InteractionHelper.safeDefer(interaction);
-
+            // DO NOT DEFER — this avoids rate limits
             const question = interaction.options.getString('question');
 
             const options = [];
@@ -84,8 +82,9 @@ export default {
             }
 
             if (options.length < 2) {
-                return InteractionHelper.safeEditReply(interaction, {
-                    embeds: [errorEmbed('You need at least **2 options**.')]
+                return interaction.reply({
+                    embeds: [errorEmbed('You need at least **2 options**.')],
+                    ephemeral: true
                 });
             }
 
@@ -112,8 +111,10 @@ export default {
                 components: [row]
             });
 
-            await InteractionHelper.safeEditReply(interaction, {
-                content: '✅ Poll created successfully!'
+            // Send a simple ephemeral confirmation
+            await interaction.reply({
+                content: '✅ Poll created successfully!',
+                ephemeral: true
             });
 
             const collector = pollMessage.createMessageComponentCollector({ time: 86400000 });
@@ -146,6 +147,3 @@ export default {
         }
     }
 };
-
-
-
