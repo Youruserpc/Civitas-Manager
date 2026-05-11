@@ -5,14 +5,57 @@ import {
     ButtonStyle
 } from 'discord.js';
 
-// Format milliseconds into "Xm Ys"
+// Convert human duration to milliseconds
+function parseDuration(input) {
+    input = input.toLowerCase().trim();
+
+    const map = {
+        "minute": 60 * 1000,
+        "minutes": 60 * 1000,
+        "min": 60 * 1000,
+        "m": 60 * 1000,
+
+        "hour": 60 * 60 * 1000,
+        "hours": 60 * 60 * 1000,
+        "h": 60 * 60 * 1000,
+
+        "day": 24 * 60 * 60 * 1000,
+        "days": 24 * 60 * 60 * 1000,
+        "d": 24 * 60 * 60 * 1000,
+
+        "week": 7 * 24 * 60 * 60 * 1000,
+        "weeks": 7 * 24 * 60 * 60 * 1000,
+        "w": 7 * 24 * 60 * 60 * 1000,
+
+        "month": 30 * 24 * 60 * 60 * 1000,
+        "months": 30 * 24 * 60 * 60 * 1000,
+        "mo": 30 * 24 * 60 * 60 * 1000
+    };
+
+    const parts = input.split(" ");
+    if (parts.length !== 2) return NaN;
+
+    const value = parseInt(parts[0]);
+    const unit = parts[1];
+
+    if (!value || !map[unit]) return NaN;
+
+    return value * map[unit];
+}
+
+// Format time left
 function formatTime(ms) {
     if (ms <= 0) return "0s";
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes > 0) return `${minutes}m ${seconds}s`;
-    return `${seconds}s`;
+
+    const sec = Math.floor(ms / 1000);
+    const min = Math.floor(sec / 60);
+    const hr = Math.floor(min / 60);
+    const day = Math.floor(hr / 24);
+
+    if (day > 0) return `${day}d ${hr % 24}h`;
+    if (hr > 0) return `${hr}h ${min % 60}m`;
+    if (min > 0) return `${min}m ${sec % 60}s`;
+    return `${sec}s`;
 }
 
 export default {
@@ -44,15 +87,24 @@ export default {
                 .setDescription('Fourth option')
                 .setRequired(false)
         )
-        .addIntegerOption(opt =>
+        .addStringOption(opt =>
             opt.setName('duration')
-                .setDescription('Poll duration in seconds')
+                .setDescription('Example: 1 minute, 5 minutes, 1 hour, 1 day, 1 week, 1 month')
                 .setRequired(true)
         ),
 
     async execute(interaction) {
         const question = interaction.options.getString('question');
-        const duration = interaction.options.getInteger('duration') * 1000; // ms
+        const durationInput = interaction.options.getString('duration');
+        const duration = parseDuration(durationInput);
+
+        if (!duration || isNaN(duration)) {
+            return interaction.reply({
+                content: '❌ Invalid duration. Try: `1 minute`, `5 minutes`, `1 hour`, `1 day`, `1 week`, `1 month`',
+                ephemeral: true
+            });
+        }
+
         const endTime = Date.now() + duration;
 
         const options = [];
@@ -68,11 +120,9 @@ export default {
             });
         }
 
-        // Votes stored in memory
         const votes = {};
         options.forEach(o => votes[o] = 0);
 
-        // Build buttons
         const row = new ActionRowBuilder();
         options.forEach((opt, i) => {
             row.addComponents(
@@ -83,7 +133,6 @@ export default {
             );
         });
 
-        // Build embed function (with timeleft)
         const buildEmbed = () => {
             const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
             const timeLeft = formatTime(endTime - Date.now());
@@ -91,10 +140,8 @@ export default {
             const pollText = options.map(opt => {
                 const count = votes[opt];
                 const percent = totalVotes === 0 ? 0 : ((count / totalVotes) * 100).toFixed(2);
-
                 const filled = Math.round(percent / 5);
                 const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
-
                 return `**${opt}**\n${bar}  ${percent}% (${count} votes)`;
             }).join('\n\n');
 
@@ -106,31 +153,25 @@ export default {
             };
         };
 
-        // Send poll message
         const pollMessage = await interaction.channel.send({
             embeds: [buildEmbed()],
             components: [row]
         });
 
-        // Ephemeral confirmation
         await interaction.reply({
             content: '✅ Poll created successfully!',
             ephemeral: true
         });
 
-        // Collector
         const collector = pollMessage.createMessageComponentCollector({ time: duration });
 
         collector.on('collect', async i => {
             const index = i.customId.split('_')[1];
             const selected = options[index];
-
             votes[selected]++;
-
             await i.update({ embeds: [buildEmbed()], components: [row] });
         });
 
-        // Update countdown every 5 seconds
         const interval = setInterval(async () => {
             if (Date.now() >= endTime) return clearInterval(interval);
             try {
@@ -143,7 +184,6 @@ export default {
         collector.on('end', async () => {
             clearInterval(interval);
 
-            // Final embed without timeleft
             const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
 
             const finalText = options.map(opt => {
@@ -166,3 +206,4 @@ export default {
         });
     }
 };
+
